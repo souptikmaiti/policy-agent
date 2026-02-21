@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from dotenv import load_dotenv
 from typing import Annotated, Any
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from beeai_framework.adapters.gemini import GeminiChatModel
 from beeai_framework.agents.requirement import RequirementAgent
+from beeai_framework.agents.types import AgentExecutionConfig
 from beeai_framework.agents.requirement.requirements.conditional import ConditionalRequirement
 from beeai_framework.backend import ChatModelParameters
 from beeai_framework.memory import UnconstrainedMemory
@@ -82,11 +84,10 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
     description = "Search insurance policy documents for coverage, terms, and conditions" # type: ignore
     input_schema = PolicySearchToolInput # type: ignore
 
-    def __init__(self, vector_store: VectorStore, embedding_client, embedding_model, trajectory, options: dict[str, Any] | None = None):
+    def __init__(self, vector_store: VectorStore, embedding_client, embedding_model, options: dict[str, Any] | None = None):
         self.vector_store = vector_store
         self.embedding_client = embedding_client
         self.embedding_model = embedding_model
-        self.trajectory = trajectory
         super().__init__(options)
 
     def _create_emitter(self) -> Emitter:
@@ -100,14 +101,7 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
             self.vector_store, input.query, self.embedding_client, self.embedding_model
         )
         snippet = "\n\n".join([f"[Relevance: {res.score:.2f}]\n{res.text}" for res in results]) # type: ignore
-
-        # Emit tool results
-        await self.trajectory.trajectory_metadata(
-            title="Vector Search Results",
-            content=f"Found {len(results)} relevant chunks:\n\n{snippet[:500]}..."
-        )
         logger.info(f"Vector Search Results: {snippet[:500]}")
-
         return StringToolOutput(snippet)
     
 
@@ -231,7 +225,7 @@ async def policy_agent_wrapper(
             content=f"Query: {query}"
         )
         
-        search_tool = PolicySearchTool(vector_store, embedding_client, embedding_model, trajectory)
+        search_tool = PolicySearchTool(vector_store, embedding_client, embedding_model)
         
         # Configure LLM from extension fulfillment
         if not llm or not llm.data:
@@ -254,7 +248,7 @@ async def policy_agent_wrapper(
         
         llm_client = GeminiChatModel(
             model_id=llm_config.api_model.removeprefix("gemini:").removeprefix("models/"),
-            parameters=ChatModelParameters(temperature=0.3),
+            parameters=ChatModelParameters(temperature=0.3, max_tokens=4096, stream=True),
             api_key=google_api_key,
         )
         
@@ -267,22 +261,63 @@ async def policy_agent_wrapper(
             instructions=POLICY_INSTRUCTIONS,
             role="Insurance Policy Assistant",
             requirements=[
-                ConditionalRequirement(search_tool, min_invocations=1, max_invocations=3)
-            ]
+                ConditionalRequirement(search_tool, min_invocations=1, max_invocations=1)
+            ],
         )
         
         yield trajectory.trajectory_metadata(
             title="Generating Response...",
             content="Analyzing policy information"
         )
+
+        response_text = ""
+
+        def handle_final_answer_stream(data, meta) -> None:
+            nonlocal response_text
+            # Accumulate streamed final answer text
+            if getattr(data, "delta", None):
+                response_text += data.delta
+        
+        def summarize_for_trajectory(data: object, limit: int = 400) -> str:
+            """
+            Convert tool inputs/outputs to a readable, bounded string for trajectory updates.
+            """
+            try:
+                text = data if isinstance(data, str) else json.dumps(data, default=str)
+            except Exception:
+                text = str(data)
+
+            return text if len(text) <= limit else f"{text[:limit]}... [truncated]"
         
         # Run agent and stream response
-        async for event, meta in agent.run(query):
+        async for event, meta in agent.run(
+            query,
+            execution=AgentExecutionConfig(max_iterations=20, max_retries_per_step=2)
+        ).on("final_answer", handle_final_answer_stream):
             if meta.name == "final_answer":
-                if hasattr(event, "delta"):
+                if getattr(event, "delta", None):
                     yield event.delta
-                elif hasattr(event, "text"):
-                    yield AgentMessage(text=event.text)
+                elif getattr(event, "text", None):
+                    response_text += event.text
+            elif meta.name == "success" and event.state.steps:
+                step = event.state.steps[-1]
+                tool_name = step.tool.name if step.tool else "Unknown Tool"
+                trajectory.trajectory_metadata(
+                    title="Tool Called",
+                    content=f"Tool called: {tool_name}"
+                )
+                if step.tool and step.tool.name != "final_answer":
+                    yield trajectory.trajectory_metadata(title=f"{tool_name} (request)", content=summarize_for_trajectory(step.input))
+
+                    if getattr(step, "error", None):
+                        yield trajectory.trajectory_metadata(title=f"{tool_name} (error)", content=step.error.explain())
+                    else:
+                        output_text = step.output.get_text_content() if getattr(step, "output", None) else "No output"
+                        yield trajectory.trajectory_metadata(title=f"{tool_name} (response)", content=summarize_for_trajectory(output_text))
+
+        # Emit final answer
+        yield AgentMessage(text=response_text)
+
     elif files:
         yield AgentMessage(text=f"{len(files)} file(s) processed")
     else:
