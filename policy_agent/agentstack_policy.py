@@ -27,7 +27,7 @@ from agentstack_sdk.a2a.extensions import (
     PlatformApiExtensionServer, PlatformApiExtensionSpec
 )
 from agentstack_sdk.server import Server
-from a2a.types import DataPart, FilePart, FileWithUri, Message, Part, TextPart
+from a2a.types import DataPart, FilePart, FileWithUri, Message, Part, TextPart, AgentSkill
 
 from .embedding.client import get_embedding_client
 from .embedding.embed import embed_chunks
@@ -114,7 +114,7 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
         programming_language="Python",
         framework="BeeAI",
         contributors=[
-            AgentDetailContributor(name="Your Name", email="your-email@example.com"),
+            AgentDetailContributor(name="Souptik Maiti", email="https://github.com/souptikmaiti"),
         ],
         variables=[
             EnvVar(name="GOOGLE_API_KEY", description="Google API Key", required=True)
@@ -123,7 +123,19 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
             AgentDetailTool(name="policy_search", description="Search policy documents for relevant information")
         ]
     ),
-    skills=[]
+    skills=[
+        AgentSkill(
+            id="HealthcarePolicyAgent",
+            name="Healthcare Policy Agent", 
+            description="Search policy documents for relevant information",
+            tags=["Healthcare", "Insurance", "Policy", "Agent"],
+            examples=[
+                "What is covered under outpatient care?",
+                "What about emergency room visits?",
+                "How much does it cost to see a specialist?"
+            ]
+        ),
+    ]
 )
 async def policy_agent_wrapper(
     input: Message,
