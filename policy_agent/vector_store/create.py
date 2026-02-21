@@ -23,5 +23,5 @@ async def create_vector_store(embedding_client: client.AsyncClient, embedding_mo
         name="policy-documents",
         dimension=dimension,
         model_id=embedding_model,
-        context_id=None,
+        context_id='abcd',
     )

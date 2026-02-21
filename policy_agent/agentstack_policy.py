@@ -43,6 +43,8 @@ load_dotenv()
 logger = logging.getLogger("policy-agent")
 logging.getLogger().setLevel(logging.DEBUG)
 
+vector_store_context_id = "abcd"
+
 
 # File formats supported by the text-extraction service (docling)
 default_input_modes = [
@@ -180,9 +182,9 @@ async def policy_agent_wrapper(
 
     vector_store = None
     VECTOR_STORE_ID = os.getenv("VECTOR_STORE_ID", None)
-    # Get global vector store by fixed ID and context_id=None
+    # Get global vector store by fixed ID and context_id=vector_store_context_id
     if VECTOR_STORE_ID:
-        vector_store = await VectorStore.get(VECTOR_STORE_ID, context_id=None)
+        vector_store = await VectorStore.get(VECTOR_STORE_ID, context_id=vector_store_context_id)
         if vector_store:
             yield trajectory.trajectory_metadata(
                 title="Vector Store Loaded",
