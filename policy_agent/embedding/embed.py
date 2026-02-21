@@ -21,7 +21,7 @@ async def embed_chunks(
         
         item = VectorStoreItem(
             document_id=file.id,
-            document_type="external",
+            document_type="platform_file",
             model_id=embedding_model,
             text=chunks[i],
             embedding=embedding_data.values,

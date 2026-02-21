@@ -14,7 +14,7 @@ from beeai_framework.tools.types import StringToolOutput, ToolRunOptions
 from beeai_framework.context import RunContext as BeeRunContext
 from beeai_framework.emitter import Emitter
 
-from agentstack_sdk.platform import File, VectorStore
+from agentstack_sdk.platform import File, VectorStore, PlatformFileUrl
 from agentstack_sdk.server.context import RunContext
 from agentstack_sdk.server.store.platform_context_store import PlatformContextStore
 from agentstack_sdk.a2a.extensions.ui.agent_detail import EnvVar, AgentDetailContributor
@@ -125,10 +125,10 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
     ),
     skills=[
         AgentSkill(
-            id="HealthcarePolicyAgent",
-            name="Healthcare Policy Agent", 
+            id="PolicyAgent",
+            name="Healthcare Insurance Policy Agent", 
             description="Search policy documents for relevant information",
-            tags=["Healthcare", "Insurance", "Policy", "Agent"],
+            tags=["Healthcare", "Insurance", "Policy", "Agent", "RAG"],
             examples=[
                 "What is covered under outpatient care?",
                 "What about emergency room visits?",
@@ -164,7 +164,9 @@ async def policy_agent_wrapper(
     for part in input.parts:
         match part.root:
             case FilePart(file=file_obj) if file_obj:
-                files.append(await File.get(file_obj.id))
+                # Extract file ID from URI
+                file_id = PlatformFileUrl(file_obj.uri).file_id
+                files.append(await File.get(file_id))
             case TextPart(text=text):
                 query = text
             case _:
