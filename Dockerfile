@@ -38,4 +38,4 @@ ENV PRODUCTION_MODE=True \
 EXPOSE 8000
 
 # Run the agent
-CMD ["uv", "run", "policy_agent"]
+CMD ["uv", "run", "--no-sync", "policy_agent"]
