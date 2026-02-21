@@ -82,10 +82,11 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
     description = "Search insurance policy documents for coverage, terms, and conditions" # type: ignore
     input_schema = PolicySearchToolInput # type: ignore
 
-    def __init__(self, vector_store: VectorStore, embedding_client, embedding_model, options: dict[str, Any] | None = None):
+    def __init__(self, vector_store: VectorStore, embedding_client, embedding_model, trajectory, options: dict[str, Any] | None = None):
         self.vector_store = vector_store
         self.embedding_client = embedding_client
         self.embedding_model = embedding_model
+        self.trajectory = trajectory
         super().__init__(options)
 
     def _create_emitter(self) -> Emitter:
@@ -99,6 +100,14 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
             self.vector_store, input.query, self.embedding_client, self.embedding_model
         )
         snippet = "\n\n".join([f"[Relevance: {res.score:.2f}]\n{res.text}" for res in results]) # type: ignore
+
+        # Emit tool results
+        await self.trajectory.trajectory_metadata(
+            title="Vector Search Results",
+            content=f"Found {len(results)} relevant chunks:\n\n{snippet[:500]}..."
+        )
+        logger.info(f"Vector Search Results: {snippet[:500]}")
+
         return StringToolOutput(snippet)
     
 
@@ -222,7 +231,7 @@ async def policy_agent_wrapper(
             content=f"Query: {query}"
         )
         
-        search_tool = PolicySearchTool(vector_store, embedding_client, embedding_model)
+        search_tool = PolicySearchTool(vector_store, embedding_client, embedding_model, trajectory)
         
         # Configure LLM from extension fulfillment
         if not llm or not llm.data:
@@ -258,7 +267,7 @@ async def policy_agent_wrapper(
             instructions=POLICY_INSTRUCTIONS,
             role="Insurance Policy Assistant",
             requirements=[
-                ConditionalRequirement(search_tool, min_invocations=1, max_invocations=1)
+                ConditionalRequirement(search_tool, min_invocations=1, max_invocations=3)
             ]
         )
         
