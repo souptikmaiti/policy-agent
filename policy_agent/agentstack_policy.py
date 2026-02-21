@@ -100,7 +100,9 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
         results = await search_vector_store(
             self.vector_store, input.query, self.embedding_client, self.embedding_model
         )
-        snippet = "\n\n".join([f"[Relevance: {res.score:.2f}]\n{res.text}" for res in results]) # type: ignore
+        # for res in results:
+        #     print(f"Relevance: {res.score:.2f}\n{res.item.text}")
+        snippet = "\n\n".join([f"[Relevance: {res.score:.2f}]\n{res.item.text}" for res in results])
         logger.info(f"Vector Search Results: {snippet[:500]}")
         return StringToolOutput(snippet)
     
