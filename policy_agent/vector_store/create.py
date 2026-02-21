@@ -1,6 +1,10 @@
+import os
+from dotenv import load_dotenv
 from agentstack_sdk.platform import VectorStore
 from google.genai import client
 from google.genai import types
+
+load_dotenv()
 
 
 async def create_vector_store(embedding_client: client.AsyncClient, embedding_model: str):
@@ -14,9 +18,10 @@ async def create_vector_store(embedding_client: client.AsyncClient, embedding_mo
         raise ValueError("Failed to get embedding dimension")
     
     dimension = len(result.embeddings[0].values)
-    
+
     return await VectorStore.create(
         name="policy-documents",
         dimension=dimension,
         model_id=embedding_model,
+        context_id=None,
     )

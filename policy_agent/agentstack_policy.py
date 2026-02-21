@@ -122,7 +122,8 @@ class PolicySearchTool(Tool[PolicySearchToolInput, ToolRunOptions, StringToolOut
             AgentDetailContributor(name="Souptik Maiti", email="https://github.com/souptikmaiti"),
         ],
         variables=[
-            EnvVar(name="GOOGLE_API_KEY", description="Google API Key", required=True)
+            EnvVar(name="GOOGLE_API_KEY", description="Google API Key", required=True),
+            EnvVar(name="VECTOR_STORE_ID", description="Vector Store ID", required=False)
         ],
         tools=[
             AgentDetailTool(name="policy_search", description="Search policy documents for relevant information")
@@ -177,12 +178,22 @@ async def policy_agent_wrapper(
             case _:
                 raise NotImplementedError(f"Unsupported part: {type(part.root)}")
 
-    # Check if vector store exists in context
     vector_store = None
-    async for message in context.load_history():
-        match message:
-            case Message(parts=[Part(root=DataPart(data=data))]):
-                vector_store = await VectorStore.get(data["vector_store_id"])
+    VECTOR_STORE_ID = os.getenv("VECTOR_STORE_ID", None)
+    # Get global vector store by fixed ID and context_id=None
+    if VECTOR_STORE_ID:
+        vector_store = await VectorStore.get(VECTOR_STORE_ID, context_id=None)
+        if vector_store:
+            yield trajectory.trajectory_metadata(
+                title="Vector Store Loaded",
+                content=f"Using existing shared database with ID: {vector_store.id}"
+            )
+
+    # Check if vector store exists in context
+    # async for message in context.load_history():
+    #     match message:
+    #         case Message(parts=[Part(root=DataPart(data=data))]):
+    #             vector_store = await VectorStore.get(data["vector_store_id"])
 
     # Create vector store if it doesn't exist
     if not vector_store:
@@ -194,6 +205,12 @@ async def policy_agent_wrapper(
         # store vector store id in context for future messages
         data_part = DataPart(data={"vector_store_id": vector_store.id})
         await context.store(AgentMessage(parts=[data_part]))
+        yield trajectory.trajectory_metadata(
+            title="Vector Store Created",
+            content=f"Created vector store with ID: {vector_store.id} \n Run: agentstack env add PolicyAgent VECTOR_STORE_ID={vector_store.id}"
+        )
+        # set manually via
+        # agentstack env add PolicyAgent VECTOR_STORE_ID="vector-store-id from response above"
 
     # Process files and add to vector store
     for file in files:
